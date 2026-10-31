@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>國立臺灣海洋大學 電機工程學系 - 互動式電機心島</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ocean: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            300: '#7dd3fc',
+                            500: '#0284c7',
+                            700: '#0369a1',
+                            900: '#0c4a6e',
+                        },
+                        island: {
+                            sand: '#fef08a',
+                            grass: '#4ade80',
+                            wood: '#b45309',
+                            roof: '#ef4444'
+                        }
+                    },
+                    fontFamily: {
+                        pixel: ['"DotGothic16"', 'sans-serif'],
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0c4a6e;
+            color: #1e293b;
+            user-select: none;
+            overflow-x: hidden;
+        }
+        .pixel-corners {
+            clip-path: polygon(
+                0 4px, 4px 4px, 4px 0,
+                calc(100% - 4px) 0, calc(100% - 4px) 4px, 100% 4px,
+                100% calc(100% - 4px), calc(100% - 4px) calc(100% - 4px), calc(100% - 4px) 100%,
+                4px 100%, 4px calc(100% - 4px), 0 calc(100% - 4px)
+            );
+        }
+        .pixel-border {
+            border: 4px solid #1e293b;
+            box-shadow: 4px 4px 0px #0002;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #e0f2fe;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #0284c7;
+            border-radius: 4px;
+        }
+        canvas {
+            image-rendering: pixelated;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+        }
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col justify-between">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-ocean-900/90 text-white border-b-4 border-ocean-700 backdrop-blur sticky top-0 z-40 px-4 py-3 flex flex-wrap justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-ocean-500 rounded-lg flex items-center justify-center border-2 border-white shadow">
+                <i data-lucide="zap" class="text-yellow-300 w-6 h-6"></i>
+            </div>
+            <div>
+                <h1 class="font-pixel text-xl sm:text-2xl text-yellow-300 tracking-wider">NTOU EE 心島導航器</h1>
+                <p class="text-xs text-ocean-100 hidden sm:block">國立臺灣海洋大學 電機工程學系 課程與學程地圖</p>
+            </div>
+        </div>
+
+        <!-- Quick Stats & Tools -->
+        <div class="flex items-center space-x-2 sm:space-x-4">
+            <button onclick="toggleGraduationModal()" class="flex items-center space-x-2 bg-yellow-400 hover:bg-yellow-300 text-slate-900 font-bold px-3 py-1.5 rounded-lg border-2 border-slate-900 text-sm transition">
+                <i data-lucide="award" class="w-4 h-4"></i>
+                <span class="hidden md:inline">畢業學分算牌器</span>
+                <span id="credit-badge" class="bg-slate-900 text-yellow-300 px-2 py-0.5 rounded-full text-xs">0 / 128</span>
+            </button>
+            
+            <button onclick="toggleAudio()" id="bgm-btn" class="p-2 bg-ocean-700 hover:bg-ocean-500 rounded-lg border border-ocean-300 transition text-white">
+                <i data-lucide="volume-2" id="sound-icon" class="w-5 h-5"></i>
+            </button>
+            <button onclick="openTrackSummary()" class="p-2 bg-ocean-700 hover:bg-ocean-500 rounded-lg border border-ocean-300 transition text-white" title="五大學程地圖">
+                <i data-lucide="map" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-2 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+        <!-- Left / Top: Interactive Island Canvas Map -->
+        <div class="lg:col-span-7 flex flex-col space-y-3">
+            <!-- Map Card -->
+            <div class="bg-ocean-800 rounded-2xl border-4 border-slate-800 shadow-2xl overflow-hidden relative flex flex-col">
+                <div class="bg-ocean-900 px-4 py-2 text-xs font-pixel text-ocean-100 flex justify-between items-center border-b border-ocean-700">
+                    <span class="flex items-center"><i data-lucide="compass" class="w-4 h-4 mr-1 text-cyan-400"></i> 心島地圖 (點擊建築與NPC互動)</span>
+                    <span class="text-cyan-300 animate-pulse">● 雙擊NPC觸發學生對話</span>
+                </div>
+
+                <!-- Canvas Wrapper -->
+                <div class="relative w-full aspect-[4/3] bg-gradient-to-b from-sky-400 to-ocean-700 overflow-hidden cursor-crosshair" id="canvas-container">
+                    <canvas id="islandCanvas" class="w-full h-full block"></canvas>
+
+                    <!-- Overlay Quick Tip -->
+                    <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur text-white px-3 py-1.5 rounded-lg border border-slate-700 text-xs flex items-center space-x-2 pointer-events-none">
+                        <i data-lucide="mouse-pointer" class="w-4 h-4 text-yellow-400"></i>
+                        <span>按住滑鼠探索電機心島地標與角色</span>
+                    </div>
+
+                    <!-- Floating Mini Status -->
+                    <div class="absolute top-3 right-3 bg-slate-900/90 text-white p-2.5 rounded-xl border border-yellow-400/50 text-xs space-y-1 shadow-lg pointer-events-none">
+                        <div class="flex items-center space-x-1.5 font-bold text-yellow-300">
+                            <i data-lucide="user-check" class="w-4 h-4"></i>
+                            <span id="hover-target-name">選擇地標或角色...</span>
+                        </div>
+                        <div class="text-slate-300 text-[11px]" id="hover-target-desc">滑鼠移至島上物件查看說明</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dialogue Box Component (Puma / Chair / Student Dialogue) -->
+            <div id="dialogue-box" class="bg-amber-50 border-4 border-slate-800 rounded-xl p-4 shadow-xl flex flex-col sm:flex-row gap-4 items-center transition-all duration-300">
+                <div class="w-16 h-16 sm:w-20 sm:h-20 bg-yellow-300 rounded-2xl border-2 border-slate-800 flex-shrink-0 flex items-center justify-center text-3xl shadow-inner relative overflow-hidden" id="npc-avatar">
+                    👨‍🏫
+                </div>
+                <div class="flex-grow space-y-1 text-center sm:text-left">
+                    <div class="flex items-center justify-center sm:justify-start space-x-2">
+                        <span id="npc-name" class="font-bold text-slate-900 font-pixel text-lg text-ocean-700">電機系系主任</span>
+                        <span id="npc-role" class="bg-ocean-100 text-ocean-700 text-xs px-2 py-0.5 rounded-full font-medium">總導師</span>
+                    </div>
+                    <p id="npc-speech" class="text-slate-700 text-sm leading-relaxed">
+                        「歡迎來到海洋大學電機工程學系！這裡有完整的心島學程地圖。你可以點擊各個學院分區，或詢問大一至大四的學長姐來規劃你的學習藍圖！」
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right / Bottom: Course Explorer & Track Filter Panel -->
+        <div class="lg:col-span-5 flex flex-col space-y-3">
+            <div class="bg-white rounded-2xl border-4 border-slate-800 shadow-xl p-4 flex flex-col h-full min-h-[500px]">
+                
+                <!-- Filter Tabs -->
+                <div class="space-y-3 mb-3 border-b border-slate-200 pb-3">
+                    <div class="flex justify-between items-center">
+                        <h2 class="font-pixel text-lg font-bold text-slate-800 flex items-center">
+                            <i data-lucide="book-open" class="w-5 h-5 mr-1.5 text-ocean-500"></i>
+                            課程與學程地圖
+                        </h2>
+                        <span class="text-xs text-slate-500">點擊課程卡片觀看細節</span>
+                    </div>
+
+                    <!-- Year Tabs -->
+                    <div class="grid grid-cols-5 gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold text-slate-600">
+                        <button onclick="setYearFilter('all')" class="year-tab py-1.5 rounded-lg transition text-center bg-white shadow text-ocean-700" data-year="all">全部</button>
+                        <button onclick="setYearFilter('1')" class="year-tab py-1.5 rounded-lg transition text-center" data-year="1">大一</button>
+                        <button onclick="setYearFilter('2')" class="year-tab py-1.5 rounded-lg transition text-center" data-year="2">大二</button>
+                        <button onclick="setYearFilter('3')" class="year-tab py-1.5 rounded-lg transition text-center" data-year="3">大三</button>
+                        <button onclick="setYearFilter('4')" class="year-tab py-1.5 rounded-lg transition text-center" data-year="4">大四</button>
+                    </div>
+
+                    <!-- Track Selector Dropdown -->
+                    <div class="flex items-center space-x-2">
+                        <label class="text-xs font-bold text-slate-600 flex-shrink-0">學程分組：</label>
+                        <select id="track-select" onchange="setTrackFilter(this.value)" class="w-full bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg p-2 font-medium focus:ring-2 focus:ring-ocean-500 outline-none">
+                            <option value="all">🌐 全系領域/核心必修</option>
+                            <option value="comm">📡 通訊與訊號處理學程</option>
+                            <option value="vlsi">💻 晶片與系統設計學程 (VLSI)</option>
+                            <option value="control">🤖 控制與智慧自動化學程</option>
+                            <option value="power">⚡ 電力與綠能工程學程</option>
+                            <option value="ai">🧠 人工智慧與資訊學程</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Course List Area -->
+                <div id="course-list" class="flex-grow space-y-2 overflow-y-auto custom-scrollbar max-h-[420px] pr-1">
+                    <!-- Dynamic rendering by JS -->
+                </div>
+
+                <!-- Footer Hint -->
+                <div class="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
+                    <span class="flex items-center"><span class="w-2 h-2 rounded-full bg-red-500 inline-block mr-1"></span> 核心必修</span>
+                    <span class="flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block mr-1"></span> 學程選修</span>
+                    <span id="course-count-tag" class="font-bold text-slate-700">共 0 門課程</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-ocean-950 text-ocean-300 text-center text-xs py-3 border-t border-ocean-800">
+        <p>© 2026 國立臺灣海洋大學 電機工程學系 NTOU EE. 心島互動體驗網頁系統.</p>
+    </footer>
+
+    <!-- Course Detail Modal -->
+    <div id="course-modal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border-4 border-slate-800 max-w-lg w-full p-6 shadow-2xl relative space-y-4 animate-float" style="animation-duration: 0.2s;">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-1.5 rounded-full">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+
+            <div class="flex items-center space-x-3">
+                <span id="modal-type-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">必修</span>
+                <span id="modal-year-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-ocean-100 text-ocean-700">大一課程</span>
+                <span id="modal-credit" class="text-xs font-bold text-slate-500">3 學分</span>
+            </div>
+
+            <div>
+                <h3 id="modal-title" class="text-xl font-bold text-slate-900 font-pixel">微積分 Calculus</h3>
+                <p id="modal-eng-title" class="text-xs text-slate-400">Calculus (I) & (II)</p>
+            </div>
+
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
+                <div><strong class="text-slate-700">先修建議：</strong> <span id="modal-prereq">高中數學底子</span></div>
+                <div><strong class="text-slate-700">歸屬學程：</strong> <span id="modal-track">全系基礎必修</span></div>
+            </div>
+
+            <div>
+                <h4 class="text-xs font-bold text-slate-700 mb-1">課程簡介與目標：</h4>
+                <p id="modal-desc" class="text-xs text-slate-600 leading-relaxed">
+                    電機系的重要數學基石，培養連續函數、微積分運算與工程數學應用能力。
+                </p>
+            </div>
+
+            <div class="bg-yellow-50 border border-yellow-200 p-3 rounded-xl text-xs text-yellow-800 space-y-1">
+                <div class="font-bold flex items-center"><i data-lucide="sparkles" class="w-3.5 h-3.5 mr-1 text-yellow-600"></i> 學長姐經驗談：</div>
+                <p id="modal-tip">「這門課是大一最核心基礎，一定要打好底子，對大二工程數學與電磁學幫助極大！」</p>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button id="modal-toggle-btn" onclick="toggleCourseCheckFromModal()" class="w-full bg-ocean-600 hover:bg-ocean-500 text-white font-bold py-2.5 rounded-xl border-2 border-slate-800 transition flex justify-center items-center space-x-2">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    <span>標記為已修過本課程</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Graduation Credit Calculator Modal -->
+    <div id="grad-modal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border-4 border-slate-800 max-w-xl w-full p-6 shadow-2xl relative space-y-4">
+            <button onclick="toggleGraduationModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-1.5 rounded-full">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+
+            <div class="flex items-center space-x-2">
+                <i data-lucide="award" class="w-6 h-6 text-yellow-500"></i>
+                <h3 class="text-xl font-bold text-slate-900 font-pixel">畢業學分審查算牌器</h3>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="space-y-1">
+                <div class="flex justify-between text-xs font-bold text-slate-700">
+                    <span>畢業總目標：128 學分</span>
+                    <span id="grad-percent">0%</span>
+                </div>
+                <div class="w-full bg-slate-200 h-4 rounded-full overflow-hidden border border-slate-300">
+                    <div id="grad-bar" class="bg-gradient-to-r from-cyan-500 to-emerald-500 h-full w-0 transition-all duration-500"></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center text-xs">
+                <div class="bg-red-50 border border-red-200 p-2.5 rounded-xl">
+                    <div class="text-slate-500">核心必修學分</div>
+                    <div class="text-lg font-bold text-red-600" id="req-credits">0 / 58</div>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
+                    <div class="text-slate-500">專業選修學分</div>
+                    <div class="text-lg font-bold text-emerald-600" id="elec-credits">0 / 40</div>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 p-2.5 rounded-xl col-span-2 sm:col-span-1">
+                    <div class="text-slate-500">通識與通識通識</div>
+                    <div class="text-lg font-bold text-sky-600" id="gen-credits">30</div>
+                </div>
+            </div>
+
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-2">
+                <div class="font-bold text-slate-800 flex items-center">
+                    <i data-lucide="info" class="w-4 h-4 mr-1 text-ocean-500"></i> 海洋大學電機系畢業標準簡要說明：
+                </div>
+                <ul class="list-disc list-inside text-slate-600 space-y-1">
+                    <li>最低畢業學分：128 學分</li>
+                    <li>核心必修約 58~62 學分 (包含專業實驗與專題)</li>
+                    <li>至少修畢其中一個**電機系專業特色學程**（需滿 15 學分選修）</li>
+                    <li>需通過大四「專題製作(一)(二)」發表</li>
+                </ul>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="toggleGraduationModal()" class="bg-slate-800 text-white font-bold px-5 py-2 rounded-xl text-xs hover:bg-slate-700">關閉閉視窗</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Track Overview Modal -->
+    <div id="track-modal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white rounded-2xl border-4 border-slate-800 max-w-2xl w-full p-6 shadow-2xl relative space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button onclick="closeTrackSummary()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 bg-slate-100 p-1.5 rounded-full">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+
+            <div class="flex items-center space-x-2">
+                <i data-lucide="layers" class="w-6 h-6 text-ocean-600"></i>
+                <h3 class="text-xl font-bold text-slate-900 font-pixel">海大電機系 五大特色專業學程</h3>
+            </div>
+
+            <p class="text-xs text-slate-600 leading-relaxed">
+                海大電機系提供完整涵蓋資通訊、半導體晶片、控制自動化、綠能電力與AI的前沿課程架構，學生可依興趣修讀取得專屬學程證書：
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div class="bg-sky-50 border border-sky-200 p-3 rounded-xl space-y-1">
+                    <div class="font-bold text-sky-800 flex items-center">📡 1. 通訊與訊號處理學程</div>
+                    <p class="text-slate-600">涵蓋無線通訊、訊號與系統、高頻電路與5G/6G通訊技術。</p>
+                </div>
+                <div class="bg-indigo-50 border border-indigo-200 p-3 rounded-xl space-y-1">
+                    <div class="font-bold text-indigo-800 flex items-center">💻 2. 晶片與系統設計學程 (VLSI)</div>
+                    <p class="text-slate-600">半導體元件、數位/類比集成電路設計、Verilog HDL與FPGA實作。</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 p-3 rounded-xl space-y-1">
+                    <div class="font-bold text-amber-800 flex items-center">🤖 3. 控制與智慧自動化學程</div>
+                    <p class="text-slate-600">控制系統、機器人學、微處理器應用、生醫工程與智慧感測。</p>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 p-3 rounded-xl space-y-1">
+                    <div class="font-bold text-emerald-800 flex items-center">⚡ 4. 電力與綠能工程學程</div>
+                    <p class="text-slate-600">電機機械、電力系統、電力電子、再生能源與離岸風力發電技術。</p>
+                </div>
+                <div class="bg-purple-50 border border-purple-200 p-3 rounded-xl sm:col-span-2 space-y-1">
+                    <div class="font-bold text-purple-800 flex items-center">🧠 5. 人工智慧與資訊工程學程</div>
+                    <p class="text-slate-600">深度學習、影像處理、演算法與資料結構、物聯網(IoT)邊緣計算。</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeTrackSummary()" class="bg-ocean-600 text-white font-bold px-5 py-2 rounded-xl text-xs hover:bg-ocean-500">瞭解並返回</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Data and Game Logic -->
+    <script>
+        // --- 1. DATA STRUCTURE: NTOU EE Curriculum & Tracks ---
+        const coursesData = [
+            // Freshman
+            { id: 'c101', name: '微積分 (一)(二)', eng: 'Calculus', year: 1, type: 'req', credits: 6, track: 'all', prereq: '高中數學底子', desc: '工程學科之核心基礎，學習極限、微分、積分與向量微積分運算。', tip: '大一的基石！觀念搞懂，大二工數就不用怕！' },
+            { id: 'c102', name: '普通物理學 & 實驗', eng: 'General Physics', year: 1, type: 'req', credits: 4, track: 'all', prereq: '無', desc: '介紹力學、電磁學基礎、熱學與光學原理，建立工程物理直覺。', tip: '物理實驗要寫結報，一定要和組員好好合作。' },
+            { id: 'c103', name: '程式設計 (Python/C)', eng: 'Computer Programming', year: 1, type: 'req', credits: 3, track: 'ai', prereq: '無', desc: '學習程式語言邏輯、變數、迴圈、函式與基礎資料結構實作。', tip: '多動手寫Code，邏輯理通了很有成就感！' },
+            { id: 'c104', name: '計算機概論', eng: 'Introduction to Computer Science', year: 1, type: 'req', credits: 3, track: 'ai', prereq: '無', desc: '簡介硬體架構、作業系統、網路基礎與計算理論。', tip: '建立對整個資訊與電腦系統的宏觀視野。' },
+
+            // Sophomore
+            { id: 'c201', name: '工程數學 (一)(二)', eng: 'Engineering Mathematics', year: 2, type: 'req', credits: 6, track: 'all', prereq: '微積分', desc: '微分方程、拉氏轉換、矩陣與複變函數，電機領域必備工具。', tip: '電磁學、控制系統與訊號處理都會用到工數，務必熟練！' },
+            { id: 'c202', name: '電路學 (一)(二)', eng: 'Circuit Theory', year: 2, type: 'req', credits: 6, track: 'all', prereq: '普通物理', desc: '基爾霍夫定律、RLC響應、交流穩態分析與二埠網路。', tip: '電機系的核心魂，題目多算就會掌握訣竅。' },
+            { id: 'c203', name: '電子學 (一)(二)', eng: 'Electronics', year: 2, type: 'req', credits: 6, track: 'vlsi', prereq: '電路學', desc: '二極體、BJT、MOSFET電路分析、放大器與頻率響應。', tip: '經典的大二三魔王之一，邏輯要非常清晰！' },
+            { id: 'c204', name: '電磁學 (一)', eng: 'Electromagnetics (I)', year: 2, type: 'req', credits: 3, track: 'comm', prereq: '工程數學', desc: '馬克斯威爾方程式、靜電場、靜磁場與平面波傳播。', tip: '向量微積分要好，三維空間想像力很重要。' },
+            { id: 'c205', name: '電子學實驗', eng: 'Electronics Lab', year: 2, type: 'req', credits: 2, track: 'vlsi', prereq: '電子學', desc: '示波器、訊號產生器操作，實作二極體與電晶體放大電路。', tip: '接線接對很有成就感，量不出波形時要耐心排錯。' },
+            { id: 'c206', name: '資料結構', eng: 'Data Structures', year: 2, type: 'elec', credits: 3, track: 'ai', prereq: '程式設計', desc: '陣列、鏈結串列、樹、圖形與排序搜尋演算法。', tip: '軟體與AI學程必選，對刷題與面試非常有幫助。' },
+
+            // Junior
+            { id: 'c301', name: '訊號與系統', eng: 'Signals and Systems', year: 3, type: 'req', credits: 3, track: 'comm', prereq: '工程數學', desc: '連續與離散時間訊號、傅立葉轉換、Z轉換與系統穩定度。', tip: 'DSP通訊與控制的關鍵交集課程！' },
+            { id: 'c302', name: '微處理器機系統與實驗', eng: 'Microprocessor Systems & Lab', year: 3, type: 'req', credits: 3, track: 'control', prereq: '數位邏輯/C語言', desc: 'ARM/STM32架構、中斷機制、GPIO控制與嵌入式實作。', tip: '動手寫韌體控制硬體，專題製作非常實用！' },
+            { id: 'c303', name: '超大型積體電路設計 (VLSI)', eng: 'VLSI Design', year: 3, type: 'elec', credits: 3, track: 'vlsi', prereq: '電子學', desc: 'CMOS邏輯電路、Layout佈局、Cadence工具操作與時序分析。', tip: '台灣半導體產業護國神山重點選修！' },
+            { id: 'c304', name: '通訊系統', eng: 'Communication Systems', year: 3, type: 'elec', credits: 3, track: 'comm', prereq: '訊號與系統', desc: 'AM/FM調變、數位通訊ASK/PSK/QAM、雜訊分析。', tip: '通訊組必備核心課程。' },
+            { id: 'c305', name: '控制系統', eng: 'Control Systems', year: 3, type: 'elec', credits: 3, track: 'control', prereq: '工程數學', desc: '根軌跡法、頻率響應波德圖、PID控制器設計與極點配置。', tip: '自動化與機器人領域的核心。' },
+            { id: 'c306', name: '電機機械', eng: 'Electric Machinery', year: 3, type: 'elec', credits: 3, track: 'power', prereq: '電路學/電磁學', desc: '變壓器、感應馬達、同步電機與直流馬達原理。', tip: '電力與綠能學程的基礎。' },
+            { id: 'c307', name: '深度學習與人工智慧', eng: 'Deep Learning & AI', year: 3, type: 'elec', credits: 3, track: 'ai', prereq: 'Python', desc: 'CNN, RNN, Transformer網路架構、PyTorch實作與影像識別。', tip: '熱門AI領域，學會運用模型解決實際問題。' },
+
+            // Senior
+            { id: 'c401', name: '專題製作 (一)(二)', eng: 'Senior Design Project', year: 4, type: 'req', credits: 4, track: 'all', prereq: '大三前累積學分', desc: '分組進入教授實驗室，進行實作系統研發與成果發表。', tip: '驗證三年所學的最高潮，成果展表現優異能加分推甄！' },
+            { id: 'c402', name: '電力電子學', eng: 'Power Electronics', year: 4, type: 'elec', credits: 3, track: 'power', prereq: '電子學', desc: 'Buck/Boost轉換器、逆變器與電動車電源管理。', tip: '綠能與綠色能源轉換極其熱門。' },
+            { id: 'c403', name: '射頻電路設計 (RF)', eng: 'RF Circuit Design', year: 4, type: 'elec', credits: 3, track: 'comm', prereq: '電磁學', desc: '史密斯圖、阻抗匹配、低雜訊放大器與天線設計。', tip: '高頻通訊硬體工程師精髓。' },
+            { id: 'c404', name: '數位訊號處理 (DSP)', eng: 'Digital Signal Processing', year: 4, type: 'elec', credits: 3, track: 'comm', prereq: '訊號與系統', desc: 'FIR/IIR濾波器設計、FFT快速傅立葉轉換應用。', tip: '語音、影像與生醫訊號處理的核心。' },
+        ];
+
+        // Track Name Mapping
+        const trackNames = {
+            'all': '🌐 全系核心基礎',
+            'comm': '📡 通訊與訊號處理',
+            'vlsi': '💻 晶片與系統設計',
+            'control': '🤖 控制與智慧自動化',
+            'power': '⚡ 電力與綠能工程',
+            'ai': '🧠 人工智慧與資訊'
+        };
+
+        // Completed courses state
+        let completedCourses = new Set();
+        let currentYearFilter = 'all';
+        let currentTrackFilter = 'all';
+        let activeSelectedCourseId = null;
+
+        // --- 2. CANVAS ISLAND INTERACTIVE MAP ENGINE ---
+        const canvas = document.getElementById('islandCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        function resizeCanvas() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            drawIsland();
+        }
+
+        // Interactive Island Nodes
+        const islandZones = [
+            { id: 'main', name: '電機系館 (Main Hall)', x: 0.5, y: 0.42, r: 42, icon: '🏛️', color: '#38bdf8', desc: '系辦公室與主任所在地，介紹總體學程與畢業規劃。' },
+            { id: 'comm', name: '通訊館 (Comm Tower)', x: 0.28, y: 0.32, r: 32, icon: '📡', color: '#0ea5e9', desc: '大氣高壓電磁天線與無線通訊實驗室。' },
+            { id: 'vlsi', name: '晶片設計中心 (VLSI Lab)', x: 0.72, y: 0.32, r: 32, icon: '💻', color: '#6366f1', desc: '半導體晶片佈局與FPGA邏輯實作開發重鎮。' },
+            { id: 'control', name: '智慧控制廠房 (Automation)', x: 0.28, y: 0.65, r: 32, icon: '🤖', color: '#f59e0b', desc: '機器人手臂、機械控制與微處理器開發區。' },
+            { id: 'power', name: '綠能電力場站 (Green Power)', x: 0.72, y: 0.65, r: 32, icon: '⚡', color: '#10b981', desc: '風力發電、太陽能逆變器與電力系統模擬。' },
+            { id: 'ai', name: 'AI創客廣場 (AI Plaza)', x: 0.5, y: 0.75, r: 32, icon: '🧠', color: '#a855f7', desc: '深度學習伺服器與專題成果展覽廣場。' }
+        ];
+
+        // Characters / NPCs
+        const npcs = [
+            { id: 'chair', name: '系主任 (Department Chair)', x: 0.48, y: 0.51, avatar: '👨‍🏫', role: '總導師', desc: '親切的系主任，隨時解答學程與職涯發展疑難雜症。' },
+            { id: 's1', name: '大一萌新小海貓', x: 0.52, y: 0.78, avatar: '🐱', role: '大一學生', desc: '「剛進海大電機，微積分和C語言程式設計要好好加油呀！」' },
+            { id: 's2', name: '大二爆肝小水手', x: 0.33, y: 0.38, avatar: '🧑‍💻', role: '大二學生', desc: '「電路學與電子學同時來襲！報告和三波形量測接踵而來！」' },
+            { id: 's3', name: '大三專題戰士', x: 0.74, y: 0.38, avatar: '🦸', role: '大三學生', desc: '「開始選修各大特考學程，還要忙著找教授選專題題目了！」' },
+            { id: 's4', name: '大四準畢業航海王', x: 0.52, y: 0.38, avatar: '🎓', role: '大四學生', desc: '「專題發表搞定，準備推甄研究所與投入半導體科技業囉！」' }
+        ];
+
+        let waveOffset = 0;
+
+        function drawIsland() {
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // 1. Ocean Waves Background
+            waveOffset += 0.03;
+            ctx.fillStyle = '#0284c7';
+            ctx.fillRect(0, 0, w, h);
+
+            ctx.fillStyle = '#38bdf8';
+            ctx.globalAlpha = 0.3;
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.arc((w * 0.2 * i + waveOffset * 20) % (w + 100) - 50, h * 0.15 * (i + 1), 60, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+
+            // 2. Island Main Sand Body (Isometric heart/ellipse base)
+            const cx = w * 0.5;
+            const cy = h * 0.52;
+            const rx = w * 0.42;
+            const ry = h * 0.38;
+
+            // Sand Edge
+            ctx.fillStyle = '#fde047';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + 12, rx, ry, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Grass Land
+            ctx.fillStyle = '#4ade80';
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, rx - 14, ry - 14, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Internal Paths / Roads (connecting nodes)
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 8;
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            islandZones.forEach(z => {
+                if (z.id !== 'main') {
+                    ctx.moveTo(cx, cy - 10);
+                    ctx.lineTo(z.x * w, z.y * h);
+                }
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 3. Draw Zone Locations
+            islandZones.forEach(z => {
+                const zx = z.x * w;
+                const zy = z.y * h;
+
+                // Glowing base circle
+                ctx.fillStyle = z.color;
+                ctx.shadowColor = z.color;
+                ctx.shadowBlur = 12;
+                ctx.beginPath();
+                ctx.arc(zx, zy, 24, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Icon Emoji
+                ctx.font = '20px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(z.icon, zx, zy);
+
+                // Label Tag
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+                ctx.fillRect(zx - 50, zy + 28, 100, 18);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '10px DotGothic16, sans-serif';
+                ctx.fillText(z.name.split(' ')[0], zx, zy + 38);
+            });
+
+            // 4. Draw Characters (NPCs)
+            npcs.forEach(npc => {
+                const nx = npc.x * w;
+                const ny = npc.y * h;
+
+                // Character Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.beginPath();
+                ctx.ellipse(nx, ny + 12, 12, 5, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Character Avatar Emoji
+                ctx.font = '24px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(npc.avatar, nx, ny);
+
+                // Name Tag
+                ctx.fillStyle = npc.id === 'chair' ? '#f59e0b' : '#38bdf8';
+                ctx.fillRect(nx - 30, ny - 24, 60, 14);
+                ctx.fillStyle = '#1e293b';
+                ctx.font = '9px "Noto Sans TC", sans-serif';
+                ctx.fillText(npc.role, nx, ny - 17);
+            });
+        }
+
+        // Mouse hover and click events on Canvas
+        let hoveredObject = null;
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            const w = canvas.width;
+            const h = canvas.height;
+
+            let found = null;
+
+            // Check NPCs
+            npcs.forEach(npc => {
+                const dist = Math.hypot(mx - npc.x * w, my - npc.y * h);
+                if (dist < 22) {
+                    found = { type: 'npc', data: npc };
+                }
+            });
+
+            // Check Zones
+            if (!found) {
+                islandZones.forEach(z => {
+                    const dist = Math.hypot(mx - z.x * w, my - z.y * h);
+                    if (dist < 28) {
+                        found = { type: 'zone', data: z };
+                    }
+                });
+            }
+
+            hoveredObject = found;
+
+            const nameEl = document.getElementById('hover-target-name');
+            const descEl = document.getElementById('hover-target-desc');
+
+            if (found) {
+                canvas.style.cursor = 'pointer';
+                if (found.type === 'npc') {
+                    nameEl.innerText = `${found.data.avatar} ${found.data.name}`;
+                    descEl.innerText = found.data.desc;
+                } else {
+                    nameEl.innerText = `${found.data.icon} ${found.data.name}`;
+                    descEl.innerText = found.data.desc;
+                }
+            } else {
+                canvas.style.cursor = 'crosshair';
+                nameEl.innerText = '選擇地標或角色...';
+                descEl.innerText = '滑鼠移至島上物件查看說明';
+            }
+        });
+
+        canvas.addEventListener('click', () => {
+            if (!hoveredObject) return;
+
+            if (hoveredObject.type === 'npc') {
+                triggerNPCDialogue(hoveredObject.data);
+            } else if (hoveredObject.type === 'zone') {
+                triggerZoneClick(hoveredObject.data);
+            }
+        });
+
+        // --- 3. DIALOGUE SYSTEM & ACTIONS ---
+        function triggerNPCDialogue(npc) {
+            const avatarEl = document.getElementById('npc-avatar');
+            const nameEl = document.getElementById('npc-name');
+            const roleEl = document.getElementById('npc-role');
+            const speechEl = document.getElementById('npc-speech');
+
+            avatarEl.innerText = npc.avatar;
+            nameEl.innerText = npc.name;
+            roleEl.innerText = npc.role;
+            speechEl.innerText = npc.desc;
+
+            // Sound effect visual feedback
+            const dialogueBox = document.getElementById('dialogue-box');
+            dialogueBox.classList.add('ring-4', 'ring-yellow-400');
+            setTimeout(() => dialogueBox.classList.remove('ring-4', 'ring-yellow-400'), 500);
+        }
+
+        function triggerZoneClick(zone) {
+            // Filter courses based on zone
+            if (zone.id === 'main') {
+                setTrackFilter('all');
+                triggerNPCDialogue(npcs[0]); // Chair
+            } else {
+                setTrackFilter(zone.id);
+                // Trigger dialogue
+                const speechEl = document.getElementById('npc-speech');
+                const nameEl = document.getElementById('npc-name');
+                const avatarEl = document.getElementById('npc-avatar');
+                avatarEl.innerText = zone.icon;
+                nameEl.innerText = zone.name;
+                speechEl.innerText = `已為您切換至【${zone.name}】的專屬課程選修地圖！可在右側探索該學程的核心與進階課程。`;
+            }
+        }
+
+        // --- 4. COURSE EXPLORER & RENDER LOGIC ---
+        function setYearFilter(year) {
+            currentYearFilter = year;
+            document.querySelectorAll('.year-tab').forEach(tab => {
+                if (tab.dataset.year === year) {
+                    tab.classList.add('bg-white', 'shadow', 'text-ocean-700');
+                    tab.classList.remove('text-slate-600');
+                } else {
+                    tab.classList.remove('bg-white', 'shadow', 'text-ocean-700');
+                    tab.classList.add('text-slate-600');
+                }
+            });
+            renderCourses();
+        }
+
+        function setTrackFilter(track) {
+            currentTrackFilter = track;
+            document.getElementById('track-select').value = track;
+            renderCourses();
+        }
+
+        function renderCourses() {
+            const listEl = document.getElementById('course-list');
+            listEl.innerHTML = '';
+
+            const filtered = coursesData.filter(c => {
+                const matchYear = (currentYearFilter === 'all' || c.year.toString() === currentYearFilter);
+                const matchTrack = (currentTrackFilter === 'all' || c.track === 'all' || c.track === currentTrackFilter);
+                return matchYear && matchTrack;
+            });
+
+            document.getElementById('course-count-tag').innerText = `共 ${filtered.length} 門課程`;
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center py-10 text-slate-400 text-xs">
+                        <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                        沒有找到符合條件的課程
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+
+            filtered.forEach(c => {
+                const isChecked = completedCourses.has(c.id);
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border-2 transition cursor-pointer flex justify-between items-center ${
+                    isChecked 
+                    ? 'bg-emerald-50 border-emerald-400' 
+                    : 'bg-slate-50 border-slate-200 hover:border-ocean-400 hover:bg-ocean-50/50'
+                }`;
+
+                card.onclick = () => openModal(c);
+
+                card.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <button onclick="event.stopPropagation(); toggleCourseCheck('${c.id}')" class="w-6 h-6 rounded-lg border-2 flex items-center justify-center transition ${
+                            isChecked ? 'bg-emerald-500 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+                        }">
+                            ${isChecked ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                        </button>
+                        <div>
+                            <div class="flex items-center space-x-2">
+                                <span class="font-bold text-xs text-slate-800">${c.name}</span>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                    c.type === 'req' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'
+                                }">${c.type === 'req' ? '必修' : '選修'}</span>
+                            </div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                大${['一','二','三','四'][c.year-1]} • ${c.credits} 學分 • ${trackNames[c.track] || '全系'}
+                            </div>
+                        </div>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i>
+                `;
+
+                listEl.appendChild(card);
+            });
+
+            lucide.createIcons();
+        }
+
+        function toggleCourseCheck(courseId) {
+            if (completedCourses.has(courseId)) {
+                completedCourses.delete(courseId);
+            } else {
+                completedCourses.add(courseId);
+            }
+            renderCourses();
+            updateGraduationStats();
+        }
+
+        // --- 5. MODAL MANAGEMENT ---
+        function openModal(course) {
+            activeSelectedCourseId = course.id;
+            const isChecked = completedCourses.has(course.id);
+
+            document.getElementById('modal-title').innerText = course.name;
+            document.getElementById('modal-eng-title').innerText = course.eng;
+            document.getElementById('modal-credit').innerText = `${course.credits} 學分`;
+            document.getElementById('modal-prereq').innerText = course.prereq;
+            document.getElementById('modal-track').innerText = trackNames[course.track] || '全系基礎';
+            document.getElementById('modal-desc').innerText = course.desc;
+            document.getElementById('modal-tip').innerText = `「${course.tip}」`;
+
+            const typeBadge = document.getElementById('modal-type-badge');
+            typeBadge.innerText = course.type === 'req' ? '核心必修' : '專業選修';
+            typeBadge.className = course.type === 'req' 
+                ? 'px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700'
+                : 'px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700';
+
+            document.getElementById('modal-year-badge').innerText = `大${['一','二','三','四'][course.year-1]}課程`;
+
+            const btn = document.getElementById('modal-toggle-btn');
+            if (isChecked) {
+                btn.className = "w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-2.5 rounded-xl border-2 border-slate-800 transition flex justify-center items-center space-x-2";
+                btn.innerHTML = `<i data-lucide="x-circle" class="w-4 h-4"></i><span>取消標記本課程</span>`;
+            } else {
+                btn.className = "w-full bg-ocean-600 hover:bg-ocean-500 text-white font-bold py-2.5 rounded-xl border-2 border-slate-800 transition flex justify-center items-center space-x-2";
+                btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i><span>標記為已修過本課程</span>`;
+            }
+
+            document.getElementById('course-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeModal() {
+            document.getElementById('course-modal').classList.add('hidden');
+        }
+
+        function toggleCourseCheckFromModal() {
+            if (activeSelectedCourseId) {
+                toggleCourseCheck(activeSelectedCourseId);
+                closeModal();
+            }
+        }
+
+        // Graduation Modal
+        function toggleGraduationModal() {
+            const modal = document.getElementById('grad-modal');
+            modal.classList.toggle('hidden');
+            updateGraduationStats();
+        }
+
+        function openTrackSummary() {
+            document.getElementById('track-modal').classList.remove('hidden');
+        }
+        function closeTrackSummary() {
+            document.getElementById('track-modal').classList.add('hidden');
+        }
+
+        // --- 6. STATS & CREDIT CALCULATOR ---
+        function updateGraduationStats() {
+            let reqTotal = 0;
+            let elecTotal = 0;
+
+            completedCourses.forEach(id => {
+                const c = coursesData.find(item => item.id === id);
+                if (c) {
+                    if (c.type === 'req') reqTotal += c.credits;
+                    else elecTotal += c.credits;
+                }
+            });
+
+            const genTotal = 30; // Standard General Ed
+            const currentEarned = reqTotal + elecTotal + genTotal;
+            const targetTotal = 128;
+            const percent = Math.min(100, Math.round((currentEarned / targetTotal) * 100));
+
+            // Update Header Badge
+            document.getElementById('credit-badge').innerText = `${currentEarned} / ${targetTotal}`;
+
+            // Update Modal
+            document.getElementById('grad-percent').innerText = `${percent}%`;
+            document.getElementById('grad-bar').style.width = `${percent}%`;
+            document.getElementById('req-credits').innerText = `${reqTotal} / 58`;
+            document.getElementById('elec-credits').innerText = `${elecTotal} / 40`;
+        }
+
+        // Sound Toggle Mock
+        let isAudioOn = false;
+        function toggleAudio() {
+            isAudioOn = !isAudioOn;
+            const icon = document.getElementById('sound-icon');
+            if (isAudioOn) {
+                icon.setAttribute('data-lucide', 'volume-2');
+                alert('🎵 心島背景音樂與音效已開啟！');
+            } else {
+                icon.setAttribute('data-lucide', 'volume-x');
+            }
+            lucide.createIcons();
+        }
+
+        // --- 7. INITIALIZATION LOOP ---
+        window.onload = function() {
+            resizeCanvas();
+            renderCourses();
+            updateGraduationStats();
+            lucide.createIcons();
+
+            // Game Loop for Canvas animation
+            function animate() {
+                drawIsland();
+                requestAnimationFrame(animate);
+            }
+            animate();
+        };
+
+        window.onresize = function() {
+            resizeCanvas();
+        };
+    </script>
+</body>
+</html>
